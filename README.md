@@ -17,4 +17,4 @@ ctest
 ## Further improvements
 - [ ] Template the class to allow for more generic storage
 - [ ] Add more throrough testing
-    - [ ] Check database to ensure the correct values wre written
+    - [ ] Check database to ensure the correct values were written
