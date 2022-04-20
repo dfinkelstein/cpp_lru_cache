@@ -81,8 +81,11 @@ public:
             m_cache_list.erase(mapItr->second);
         }
 
-        // The the list location to the cache
+        // Add the list location to the cache
         m_cache_map[key] = m_cache_list.begin();
+
+        // Mark it as modified
+        m_modification_map[key] = true;
 
         // If we are exceeding the size of the cache, we need to purge the oldest 
         // element to the persistent store
@@ -92,13 +95,18 @@ public:
             // and remove it from the cache.
             auto end_itr = m_cache_list.rbegin();
             m_cache_map.erase(end_itr->first);
+            m_modification_map.erase(end_itr->first);
 
             // Save the data and remove it from the history list
             key_val_pair lastElem = m_cache_list.back();
             m_cache_list.pop_back();
 
-            // Write the data to the persistent store
-            writeToDB(lastElem.first, lastElem.second);
+            // Write the data to the persistent store, only if it has
+            // been modified
+            if (isModified(lastElem.first))
+            {
+                writeToDB(lastElem.first, lastElem.second);
+            }
         }
     }
 
@@ -129,6 +137,9 @@ public:
                 // most recently accessed item. Then, get that item from the cache
                 // and return the value
                 put(key, value);
+                // Since we just retrieved it from the database, it isnt really modified, yet
+                m_modification_map[key] = false; 
+
                 mapItr = m_cache_map.find(key);
                 if (mapItr != m_cache_map.end())
                 {
@@ -168,7 +179,8 @@ public:
 
 private:
     std::list<key_val_pair> m_cache_list;
-    std::unordered_map< std::string, list_itr> m_cache_map;
+    std::unordered_map<std::string, list_itr> m_cache_map;
+    std::unordered_map<std::string, bool> m_modification_map; 
 
     size_t m_max_cache_size;
 
@@ -245,25 +257,47 @@ private:
      */
     bool purgeToStorage()
     {
+        bool dataAdded = false;
+
         std::stringstream ss;
         ss << "INSERT OR REPLACE INTO data (key, value) VALUES ";
         for (auto listItr = m_cache_list.begin(); listItr != m_cache_list.end(); ++listItr)
         {
-            ss << "( '" << listItr->first << "', '" << listItr->second << "' ),";
+            // Only write it back out to the persistent storage if it has been modified
+            if (isModified(listItr->first))
+            {
+                ss << "( '" << listItr->first << "', '" << listItr->second << "' ),";
+                dataAdded = true;
+            }
         }
         ss.seekp(-1, std::ios_base::end); // Remove the extra comma for the last value
         ss << ";"; // Add the semicolon to finish the SQL statement
 
-        char* errMsg = nullptr;
-        int status = sqlite3_exec(m_db, ss.str().c_str(), NULL, nullptr, &errMsg);
-        if (status != SQLITE_OK)
+        // Only perform the write if there is data to write
+        if (dataAdded)
         {
-            std::cerr << "SQL error ocurred: " << std::string(errMsg) << std::endl;
-            sqlite3_free(errMsg);
-            return false;
+            char* errMsg = nullptr;
+            int status = sqlite3_exec(m_db, ss.str().c_str(), NULL, nullptr, &errMsg);
+            if (status != SQLITE_OK)
+            {
+                std::cerr << "SQL error ocurred: " << std::string(errMsg) << std::endl;
+                sqlite3_free(errMsg);
+                return false;
+            }
         }
 
         return true;
+    }
+
+    bool isModified(std::string key)
+    {
+        auto mapItr = m_modification_map.find(key);
+        if (mapItr != m_modification_map.end())
+        {
+            return mapItr->second;
+        }
+
+        return false;
     }
 };
 
