@@ -289,6 +289,13 @@ private:
         return true;
     }
 
+    /**
+     * @brief Checks to see if the provided key has been modified
+     * 
+     * @param key Key to check for modification
+     * @return true if the provided key has been modified
+     * @return false if the provided key has not been modified
+     */
     bool isModified(std::string key)
     {
         auto mapItr = m_modification_map.find(key);
